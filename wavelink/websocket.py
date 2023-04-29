@@ -53,21 +53,23 @@ class Websocket:
         'retries',
         'retry',
         '_original_attempts',
+        'loop',
         'backoff',
         '_listener_task'
     )
 
-    def __init__(self, *, node: Node) -> None:
+    def __init__(self, *, node: Node, loop: Optional[asyncio.AbstractEventLoop] = None) -> None:
         self.node: Node = node
         self.socket: aiohttp.ClientWebSocketResponse | None = None
 
         self.retries: int | None = node._retries
         self.retry: float = 1
         self._original_attempts: int | None = node._retries
+        self.loop: asyncio.AbstractEventLoop = loop or asyncio.get_event_loop()
 
         self.backoff: Backoff = Backoff()
 
-        self._listener_task: asyncio.Task | None = None
+        self._listener_task: Optional[asyncio.Task] = None
 
     @property
     def headers(self) -> dict[str, str]:
@@ -119,7 +121,7 @@ class Websocket:
             await self._reconnect()
             return
 
-        self._listener_task = asyncio.create_task(self._listen())
+        self._listener_task = self.loop.create_task(self._listen())
 
     async def _reconnect(self) -> None:
         self.node._status = NodeStatus.CONNECTING
@@ -150,7 +152,7 @@ class Websocket:
                 for player in self.node.players.copy().values():
                     await player._update_event(data=None)
 
-                asyncio.create_task(self._reconnect())
+                self.loop.create_task(self._reconnect())
                 return
 
             if message.data == 1011:
